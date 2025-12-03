@@ -421,34 +421,85 @@ class DataExporter:
 						self.add_data_row(rows, c["doctype"], c["parentfield"], child, ci)
 			for row in rows:
 				self.writer.writerow(row)
+	# def add_data_row(self, rows, dt, parentfield, doc, rowidx):
+	# 	d = doc.copy()
+	# 	meta = frappe.get_meta(dt)
+	# 	if self.all_doctypes:
+	# 		d.name = f'"{d.name}"'
 
+	# 	if len(rows) < rowidx + 1:
+	# 		rows.append([""] * (len(self.columns) + 1))
+	# 	row = rows[rowidx]
+
+	# 	_column_start_end = self.column_start_end.get((dt, parentfield))
+
+	# 	if _column_start_end:
+	# 		for i, c in enumerate(self.columns[_column_start_end.start : _column_start_end.end]):
+	# 			df = meta.get_field(c)
+	# 			fieldtype = df.fieldtype if df else "Data"
+	# 			value = d.get(c, "")
+	# 			if value:
+	# 				if fieldtype == "Date":
+	# 					value = formatdate(value)
+	# 				elif fieldtype == "Datetime":
+	# 					value = format_datetime(value)
+	# 				elif fieldtype == "Duration":
+	# 					value = format_duration(value, df.hide_days)
+	# 				elif fieldtype == "Text Editor" and value:
+	# 					value = frappe.core.utils.html2text(value)
+	# 			row[_column_start_end.start + i + 1] = value
+    #my code imporved one
 	def add_data_row(self, rows, dt, parentfield, doc, rowidx):
 		d = doc.copy()
 		meta = frappe.get_meta(dt)
+
+		# Apply name formatting for all-doctypes mode
 		if self.all_doctypes:
 			d.name = f'"{d.name}"'
 
+		# Ensure row exists
 		if len(rows) < rowidx + 1:
 			rows.append([""] * (len(self.columns) + 1))
 		row = rows[rowidx]
 
-		_column_start_end = self.column_start_end.get((dt, parentfield))
+		# First column (index 0) is ALWAYS the parent/doctype id
+		# ---------------------------------------------------------
+		# 🔥 FIX: ALWAYS repeat parent value for child tables
+		# ---------------------------------------------------------
+		if dt == self.doctype:
+			name_value = d.get("name", "")
+			if isinstance(name_value, str) and name_value.startswith('"') and name_value.endswith('"'):
+				name_value = name_value[1:-1]
+				row[0] = name_value
+		else:
+			parent_value = d.get("parent", "")
+			if isinstance(parent_value, str) and parent_value.startswith('"') and parent_value.endswith('"'):
+				parent_value = parent_value[1:-1]
+			row[0] = parent_value
+		# ---------------------------------------------------------
 
-		if _column_start_end:
-			for i, c in enumerate(self.columns[_column_start_end.start : _column_start_end.end]):
-				df = meta.get_field(c)
-				fieldtype = df.fieldtype if df else "Data"
-				value = d.get(c, "")
-				if value:
-					if fieldtype == "Date":
-						value = formatdate(value)
-					elif fieldtype == "Datetime":
-						value = format_datetime(value)
-					elif fieldtype == "Duration":
-						value = format_duration(value, df.hide_days)
-					elif fieldtype == "Text Editor" and value:
-						value = frappe.core.utils.html2text(value)
-				row[_column_start_end.start + i + 1] = value
+		_column_start_end = self.column_start_end.get((dt, parentfield))
+		if not _column_start_end:
+			return
+
+		# Fill the rest of the columns normally
+		for i, c in enumerate(self.columns[_column_start_end.start : _column_start_end.end]):
+			df = meta.get_field(c)
+			fieldtype = df.fieldtype if df else "Data"
+			value = d.get(c, "")
+
+			if value:
+				if fieldtype == "Date":
+					value = formatdate(value)
+				elif fieldtype == "Datetime":
+					value = format_datetime(value)
+				elif fieldtype == "Duration":
+					value = format_duration(value, getattr(df, "hide_days", False))
+				elif fieldtype == "Text Editor":
+					value = frappe.core.utils.html2text(value)
+
+			row[_column_start_end.start + i + 1] = value
+
 
 	def build_response_as_excel(self):
 		from frappe.desk.utils import provide_binary_file
